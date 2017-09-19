@@ -34,7 +34,6 @@ disk::write_block(blockid_t id, const char *buf)
   	return;
   }
   memcpy(this->blocks[id], buf, BLOCK_SIZE);
-  //printf("!!!!!!!!!=============disk write block %d \n", id);
 }
 
 // block layer -----------------------------------------
@@ -52,9 +51,9 @@ block_manager::alloc_block()
           use bit operation.
           remind yourself of the layout of disk.
    */
+  char *buf = (char *)malloc(BLOCK_SIZE);
   int bits = BLOCK_NUM;
   for(int i = 0; i < bits / BPB; ++i) {
-    char *buf = (char *)malloc(BLOCK_SIZE);
 	d->read_block(2 + i, buf);
 	for(int j = 0; j < BLOCK_SIZE; ++j) {
 		char tmp = buf[j];
@@ -71,11 +70,9 @@ block_manager::alloc_block()
 			return block_num;
 		}
 	}
-	free(buf);
   }
   int rest = bits % BPB;
   if(rest > 0) {	
-    char *buf = (char *)malloc(BLOCK_SIZE);
 	int i = bits / BPB;
 	d->read_block(2 + i, buf);
 	for(int j = 0; j < rest / 8; ++j) {
@@ -88,8 +85,8 @@ block_manager::alloc_block()
 			tmp |= 1 << (7-offset);
 			buf[j] = tmp;
 			d->write_block(2 + i, buf);
-			free(buf);
 			int block_num = BPB * i + 8 * j + offset;
+			free(buf);
 			return block_num;
 		}
 	}
@@ -103,13 +100,12 @@ block_manager::alloc_block()
 		tmp |= 1 << (7-offset);
 		buf[rest / 8] = tmp;
 		d->write_block(2 + i, buf);
-		free(buf);
 		int block_num = BPB * i + 8 * (rest / 8) + offset;
+		free(buf);
 		return block_num;
 	}
-	free(buf);
   }
-  
+  free(buf);
   return 0;
 }
 
@@ -142,8 +138,7 @@ block_manager::block_manager()
   sb.ninodes = INODE_NUM;
 
   // ??????????????????
-  // set block bitmap to 1 for boot block, super block and bitmap block
-  //int bits = BBLOCK(BLOCK_NUM) + 1;
+  // set block bitmap to 1 for boot block, super block, bitmap block, inode block
   int bits = IBLOCK(INODE_NUM, BLOCK_NUM) + 1;
   for(int i = 0; i < bits / BPB; ++i) {
     char *buf = (char *)malloc(BLOCK_SIZE);
@@ -273,7 +268,6 @@ inode_manager::get_inode(uint32_t inum)
   }
 
   bm->read_block(IBLOCK(inum, bm->sb.nblocks), buf);
-  // printf("%s:%d\n", __FILE__, __LINE__);
 
   ino_disk = (struct inode*)buf + inum%IPB;
   if (ino_disk->type == 0) {
@@ -318,7 +312,6 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
   struct inode *node = this->get_inode(inum);
   *size = node->size;
   unsigned int block_count = (*size + BLOCK_SIZE - 1) / BLOCK_SIZE;
-  //printf("============debug: read_file imun=%d size=%d block_count=%d\n", inum, *size, block_count);
   char *buf = (char *)malloc(block_count * BLOCK_SIZE);
   if(block_count <= NDIRECT) {
     for(unsigned int i = 0; i < block_count; ++i) {
@@ -327,33 +320,22 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
     }
   }
   else if(block_count <= NDIRECT + NINDIRECT) {
-  //printf("===========read file block start==================\n");
     for(int i = 0; i < NDIRECT; ++i) {
       int block_index = node->blocks[i];
       bm->read_block(block_index, buf + i*BLOCK_SIZE);
-	  //printf("%d ",block_index);
-	  //std::string ss;
-	  //ss.assign(buf + i*BLOCK_SIZE, BLOCK_SIZE);
-	  //std::cout << ss << std::endl;
     }
 	blockid_t *indriect_block = (blockid_t *)malloc(BLOCK_SIZE);
 	bm->read_block(node->blocks[NDIRECT], (char *)indriect_block);
 	for(unsigned int i = 0; i < block_count - NDIRECT; ++i) {
       bm->read_block(indriect_block[i], buf + (NDIRECT+i)*BLOCK_SIZE);
-	  //printf("%d ",indriect_block[i]);
-	  //std::string ss;
-	  //ss.assign(buf + (NDIRECT+i)*BLOCK_SIZE, BLOCK_SIZE);
-	  //std::cout << ss << std::endl;
 	}
 	free(indriect_block);
-  //printf("===========read file block end==================\n");
   }
   else {
     // file is too large !
   }
   *buf_out = buf;
   free(node);
-  //printf("============debug: read_file end imun=%d size=%d block_count=%d\n", inum, *size, block_count);
 }
 
 /* alloc/free blocks if needed */
@@ -367,7 +349,6 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
    * is larger or smaller than the size of original inode.
    * you should free some blocks if necessary.
    */
-  //printf("============debug: write_file imun=%d size=%d\n", inum, size);
   struct inode *node = this->get_inode(inum);
   unsigned int old_block_count = (node->size + BLOCK_SIZE - 1) / BLOCK_SIZE;
   unsigned int new_block_count = (size + BLOCK_SIZE - 1) / BLOCK_SIZE;
@@ -438,36 +419,21 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
     free(buf_block);
   }
   else {
-    //printf("=======write block start=====================\n");
     unsigned int i = 0;
     for(i = 0; i < NDIRECT; ++i) {
       bm->write_block(node->blocks[i], buf + i*BLOCK_SIZE);
-	  //printf("%d ",node->blocks[i]);
-	  //std::string ss;
-	  //ss.assign(buf + i*BLOCK_SIZE, BLOCK_SIZE);
-	  //std::cout << ss << std::endl;
     }
   	for(i = 0; i + 1 < new_block_count - NDIRECT; ++i) {
       bm->write_block(indriect_block[i], buf + (i+NDIRECT)*BLOCK_SIZE);
-	  //printf("%d ",indriect_block[i]);
-	  //std::string ss;
-	  //ss.assign(buf + (i+NDIRECT)*BLOCK_SIZE, BLOCK_SIZE);
-	  //std::cout << ss << std::endl;
     }
     char *buf_block = (char *)malloc(BLOCK_SIZE);
     memcpy(buf_block, buf + (i+NDIRECT)*BLOCK_SIZE, (size+BLOCK_SIZE-1) % BLOCK_SIZE + 1);
     bm->write_block(indriect_block[i], buf_block);
-    //printf("%d ",indriect_block[i]);
-	//std::string ss;
-	//ss.assign(buf_block, BLOCK_SIZE);
-	//std::cout << ss << std::endl;
     free(buf_block);
-    //printf("=======write block end=====================\n");
   }
   
   node->size = size;
   put_inode(inum, node);
-  //printf("=====finish put_inode \n");
   free(node);
   if(indriect_block != NULL) {
     free(indriect_block);
