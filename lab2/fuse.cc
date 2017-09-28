@@ -506,6 +506,19 @@ void fuseserver_symlink(fuse_req_t req, const char *link, fuse_ino_t parent, con
     }
 }
 
+void fuseserver_rmdir(fuse_req_t req, fuse_ino_t parent, const char *name) {
+    int r;
+    if ((r = yfs->rmdir(parent, name)) == yfs_client::OK) {
+        fuse_reply_err(req, 0);
+    } else {
+        if (r == yfs_client::NOENT) {
+            fuse_reply_err(req, ENOENT);
+        } else {
+            fuse_reply_err(req, ENOTEMPTY);
+        }
+    }
+}
+
 struct fuse_lowlevel_ops fuseserver_oper;
 
 int
@@ -553,8 +566,9 @@ main(int argc, char *argv[])
      * routines here to implement symbolic link,
      * rmdir, etc.
      * */
-    fuseserver_oper.readlink     = fuseserver_readlink;
-    fuseserver_oper.symlink      = fuseserver_symlink;
+    fuseserver_oper.readlink   = fuseserver_readlink;
+    fuseserver_oper.symlink    = fuseserver_symlink;
+    fuseserver_oper.rmdir      = fuseserver_rmdir;
 
     const char *fuse_argv[20];
     int fuse_argc = 0;

@@ -187,7 +187,7 @@ yfs_client::setattr(inum ino, size_t size)
 // my own design for directory file
 struct DirectoryEntry {
     yfs_client::inum ino;    // inode num of the file
-    char name[256];    // file name, max length is 255 (last byte is '\0')
+    char name[64];    // file name, max length is 255 (last byte is '\0')
 };
 
 // my own function
@@ -432,4 +432,9 @@ int yfs_client::symlink(inum parent, const char *link, const char *name) {
     this->write(ino_out, strlen(link), 0, link, bytes_written);
     printf("========debug writesymlink ino: %d , isfile %d , issymlink %d\n", ino_out,isfile(ino_out),issymlink(ino_out));
     return r;
+}
+
+// my own rmdir
+int yfs_client::rmdir(inum parent, const char *name) {
+    return this->unlink(parent, name);    // this is not good !
 }
