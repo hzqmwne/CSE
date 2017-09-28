@@ -58,6 +58,18 @@ getattr(yfs_client::inum inum, struct stat &st)
         st.st_ctime = info.ctime;
         st.st_size = info.size;
         printf("   getattr -> %llu\n", info.size);
+    } else if(yfs->issymlink(inum)) {
+        yfs_client::fileinfo info;
+        ret = yfs->getsymlink(inum, info);
+        if(ret != yfs_client::OK)
+            return ret;
+        st.st_mode = S_IFLNK | 0666;
+        st.st_nlink = 1;
+        st.st_atime = info.atime;
+        st.st_mtime = info.mtime;
+        st.st_ctime = info.ctime;
+        st.st_size = info.size;
+        printf("   getattr -> %llu\n", info.size);
     } else {
         yfs_client::dirinfo info;
         ret = yfs->getdir(inum, info);
@@ -457,6 +469,43 @@ fuseserver_statfs(fuse_req_t req)
     fuse_reply_statfs(req, &buf);
 }
 
+// my own readlink
+void fuseserver_readlink(fuse_req_t req, fuse_ino_t ino) {
+    int r;
+    std::string link;
+    if ((r = yfs->readlink(ino, link)) == yfs_client::OK) {
+        fuse_reply_readlink(req, link.c_str());
+    } else {
+        if (r == yfs_client::NOENT) {
+            fuse_reply_err(req, ENOENT);
+        } else {
+            fuse_reply_err(req, ENOTEMPTY);
+        }
+    }
+}
+
+// my own symlink
+void fuseserver_symlink(fuse_req_t req, const char *link, fuse_ino_t parent, const char *name) {
+    struct fuse_entry_param e;
+    // In yfs, timeouts are always set to 0.0, and generations are always set to 0
+    e.attr_timeout = 0.0;
+    e.entry_timeout = 0.0;
+    e.generation = 0;
+    
+    int r;
+    if ((r = yfs->symlink(parent, link, name)) == yfs_client::OK) {
+        fuse_reply_entry(req, &e);
+        printf("========debug reply entry symlink ok\n");
+    } else {
+        if (r == yfs_client::NOENT) {
+            fuse_reply_err(req, ENOENT);
+        } else {
+            fuse_reply_err(req, ENOTEMPTY);
+        }
+        printf("========debug reply entry symlink fail\n");
+    }
+}
+
 struct fuse_lowlevel_ops fuseserver_oper;
 
 int
@@ -504,6 +553,8 @@ main(int argc, char *argv[])
      * routines here to implement symbolic link,
      * rmdir, etc.
      * */
+    fuseserver_oper.readlink     = fuseserver_readlink;
+    fuseserver_oper.symlink      = fuseserver_symlink;
 
     const char *fuse_argv[20];
     int fuse_argc = 0;
