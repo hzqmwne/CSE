@@ -234,7 +234,7 @@ int yfs_client::createTypeFile(inum parent, const char *name, mode_t mode, inum 
         buf.append(tmp);
     }
     ec->put(parent, buf);
-    printf("==========debug create new ino: %d,name %s, empty_pos %d, old count %d\n",ino_out,name, empty_pos,count);    ///////////////////
+    printf("==========debug create new ino: %d,name %s, empty_pos %d, old count %d\n",(int)ino_out,name, empty_pos,count);    ///////////////////
     return r;
 }
 
@@ -348,7 +348,7 @@ yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
 	else {
         data = std::string("");
     }
-	printf("========debug read ino: %d buf: %s",ino,data.c_str());
+	printf("========debug read ino: %d buf: %s",(int)ino,data.c_str());
     return r;
 }
 
@@ -380,7 +380,7 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
     ec->put(ino, buf);
 	bytes_written = size;
 
-	printf("========debug write ino: %d buf: %s",ino,buf.c_str());
+	printf("========debug write ino: %d buf: %s",(int)ino,buf.c_str());
     return r;
 }
 
@@ -428,9 +428,9 @@ int yfs_client::symlink(inum parent, const char *link, const char *name) {
     inum ino_out;
 	size_t bytes_written;
     createTypeFile(parent, name, 0, ino_out, extent_protocol::T_SYMLINK);
-    printf("========debug createsymlink ino: %d , isfile %d , issymlink %d\n", ino_out,isfile(ino_out),issymlink(ino_out));
+    printf("========debug createsymlink ino: %d , isfile %d , issymlink %d\n", (int)ino_out,isfile(ino_out),issymlink(ino_out));
     this->write(ino_out, strlen(link), 0, link, bytes_written);
-    printf("========debug writesymlink ino: %d , isfile %d , issymlink %d\n", ino_out,isfile(ino_out),issymlink(ino_out));
+    printf("========debug writesymlink ino: %d , isfile %d , issymlink %d\n", (int)ino_out,isfile(ino_out),issymlink(ino_out));
     return r;
 }
 
