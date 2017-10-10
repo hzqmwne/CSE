@@ -36,7 +36,6 @@ class yfs_client {
   static inum n2i(std::string);
 
  public:
-  yfs_client();
   yfs_client(std::string);
 
   bool isfile(inum);
