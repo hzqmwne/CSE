@@ -14,13 +14,14 @@ class extent_protocol {
     put = 0x6001,
     get,
     getattr,
-    remove
+    remove,
+    create
   };
 
   enum types {
     T_DIR = 1,
     T_FILE,
-	T_SYMLINK
+    T_SYMLINK
   };
 
   struct attr {
