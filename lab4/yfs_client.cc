@@ -9,9 +9,10 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-yfs_client::yfs_client(std::string extent_dst)
+yfs_client::yfs_client(std::string extent_dst, std::string lock_dst)
 {
     ec = new extent_client(extent_dst);
+    lc = new lock_client(lock_dst);
     if (ec->put(1, "") != extent_protocol::OK)
         printf("error init root dir\n"); // XYB: init root dir
 }
@@ -38,10 +39,14 @@ yfs_client::isfile(inum inum)
 {
     extent_protocol::attr a;
 
+    //assert(inum > 0 && inum < 10000);
+    //lc->acquire(inum);
     if (ec->getattr(inum, a) != extent_protocol::OK) {
+	    //lc->release(inum);
         printf("error getting attr\n");
         return false;
     }
+    //lc->release(inum);
 
     if (a.type == extent_protocol::T_FILE) {
         printf("isfile: %lld is a file\n", inum);
@@ -58,10 +63,14 @@ yfs_client::isfile(inum inum)
 bool yfs_client::issymlink(inum ino) {
     extent_protocol::attr a;
 
+    //assert(ino> 0 && ino < 10000);
+    //lc->acquire(ino);
     if (ec->getattr(ino, a) != extent_protocol::OK) {
+	    //lc->release(ino);
         printf("error getting attr\n");
         return false;
     }
+    //lc->release(ino);
 
     if (a.type == extent_protocol::T_SYMLINK) {
         printf("issymlink: %lld is a symbol link\n", ino);
@@ -76,10 +85,14 @@ yfs_client::isdir(inum inum)
     // Oops! is this still correct when you implement symlink?
     extent_protocol::attr a;
 
+    //assert(inum > 0 && inum < 10000);
+    //lc->acquire(inum);
     if (ec->getattr(inum, a) != extent_protocol::OK) {
+        //lc->release(inum);
         printf("error getting attr\n");
         return false;
     }
+    //lc->release(inum);
 
     if (a.type == extent_protocol::T_DIR) {
         printf("isdir: %lld is a dir\n", inum);
@@ -96,10 +109,14 @@ yfs_client::getfile(inum inum, fileinfo &fin)
 
     printf("getfile %016llx\n", inum);
     extent_protocol::attr a;
+    //assert(inum > 0 && inum < 10000);
+    //lc->acquire(inum);
     if (ec->getattr(inum, a) != extent_protocol::OK) {
+        //lc->release(inum);
         r = IOERR;
         goto release;
     }
+    //lc->release(inum);
 
     fin.atime = a.atime;
     fin.mtime = a.mtime;
@@ -118,10 +135,14 @@ yfs_client::getdir(inum inum, dirinfo &din)
 
     printf("getdir %016llx\n", inum);
     extent_protocol::attr a;
+    //assert(inum > 0 && inum < 10000);
+    //lc->acquire(inum);
     if (ec->getattr(inum, a) != extent_protocol::OK) {
+        //lc->release(inum);
         r = IOERR;
         goto release;
     }
+    //lc->release(inum);
     din.atime = a.atime;
     din.mtime = a.mtime;
     din.ctime = a.ctime;
@@ -137,10 +158,14 @@ yfs_client::getsymlink(inum inum, fileinfo &fin)
 
     printf("getsymlink %016llx\n", inum);
     extent_protocol::attr a;
+    //assert(inum > 0 && inum < 10000);
+    //lc->acquire(inum);
     if (ec->getattr(inum, a) != extent_protocol::OK) {
+        //lc->release(inum);
         r = IOERR;
         goto release;
     }
+    //lc->release(inum);
     fin.atime = a.atime;
     fin.mtime = a.mtime;
     fin.ctime = a.ctime;
@@ -172,9 +197,12 @@ yfs_client::setattr(inum ino, size_t size)
 
     // really unefficient !
     std::string buf = std::string();
+    //assert(ino > 0 && ino < 10000);
+	lc->acquire(ino);
     ec->get(ino, buf);
     buf.resize(size);
     ec->put(ino, buf);
+	lc->release(ino);
     return r;
 }
 
@@ -208,7 +236,7 @@ int yfs_client::createTypeFile(inum parent, const char *name, mode_t mode, inum 
             // first empty position in directory entry list
         }
     }
-    
+
     // now, must not find
 	inum new_ino;
     ec->create(type, new_ino);
@@ -242,7 +270,10 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
      * note: lookup is what you need to check if file exist;
      * after create file or dir, you must remember to modify the parent infomation.
      */
+    //assert(parent > 0 && parent < 10000);
+    lc->acquire(parent);
     createTypeFile(parent, name, mode, ino_out, extent_protocol::T_FILE);
+    lc->release(parent);
     return r;
 }
 
@@ -257,8 +288,10 @@ yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
      * after create file or dir, you must remember to modify the parent infomation.
      */
     
+    //assert(parent > 0 && parent < 10000);
+    lc->acquire(parent);
     createTypeFile(parent, name, mode, ino_out, extent_protocol::T_DIR);
-
+    lc->release(parent);
     return r;
 }
 
@@ -273,11 +306,17 @@ yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
      * you should design the format of directory content.
      */
 
+    //assert(parent > 0 && parent < 10000);
+    //lc->acquire(parent);
+
     extent_protocol::attr a;
     ec->getattr(parent, a);
 
     std::string buf;
     ec->get(parent, buf);
+
+    //lc->release(parent);
+
     const char *directory = buf.c_str();
 
     DirectoryEntry *entry = (DirectoryEntry *)directory;
@@ -304,11 +343,17 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
      * and push the dirents to the list.
      */
 
+    //assert(dir > 0 && dir < 10000);
+    //lc->acquire(dir);
+
     extent_protocol::attr a;
     ec->getattr(dir, a);
 
     std::string buf;
     ec->get(dir, buf);
+
+    //lc->release(dir);
+
     const char *directory = buf.c_str();
 
     DirectoryEntry *entry = (DirectoryEntry *)directory;
@@ -335,7 +380,10 @@ yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
      */
 
     std::string buf;
+    //assert(ino > 0 && ino < 10000);
+	//lc->acquire(ino);
     ec->get(ino, buf);
+    //lc->release(ino);
     if(off < (off_t)buf.size()) {
         data = buf.substr(off, size<buf.size()-off ? size : buf.size()-off);
     }
@@ -358,6 +406,9 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
      * when off > length of original file, fill the holes with '\0'.
      */
 
+    //assert(ino > 0 && ino < 10000);
+    lc->acquire(ino);
+
     std::string new_data;
 	new_data.assign(data, size);
     
@@ -374,6 +425,8 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
     ec->put(ino, buf);
 	bytes_written = size;
 
+    lc->release(ino);
+
 	printf("========debug write ino: %d buf: %s",(int)ino,buf.c_str());
     return r;
 }
@@ -388,6 +441,9 @@ int yfs_client::unlink(inum parent,const char *name)
      * and update the parent directory content.
      */
 
+    //assert(parent > 0 && parent < 10000);
+    lc->acquire(parent);
+
     extent_protocol::attr a;
     ec->getattr(parent, a);
 
@@ -399,20 +455,27 @@ int yfs_client::unlink(inum parent,const char *name)
 	unsigned int count = a.size / sizeof(DirectoryEntry);
     for(int i = 0; i < (int)count; ++i) {
         if(entry[i].ino != 0 && !strcmp(name, entry[i].name)) {
+            lc->acquire(entry[i].ino);
             ec->remove(entry[i].ino);
+            lc->release(entry[i].ino);
             memset((char *)(entry + i), 0, sizeof(DirectoryEntry));
             ec->put(parent, buf);
+            lc->release(parent);
             return r;    // if find, immediately return
         }
     }
-    
+    lc->release(parent);
+
     return NOENT;
 }
 
 // my own readlink
 int yfs_client::readlink(inum ino, std::string &link) {
     int r = OK;
+    //assert(ino > 0 && ino < 10000);
+    //lc->acquire(ino);
     ec->get(ino, link);
+    //lc->release(ino);
 	return r;
 }
 
@@ -421,10 +484,16 @@ int yfs_client::symlink(inum parent, const char *link, const char *name) {
     int r = OK;
     inum ino_out;
 	size_t bytes_written;
+    //assert(parent > 0 && parent < 10000);
+    //lc->acquire(parent);
     createTypeFile(parent, name, 0, ino_out, extent_protocol::T_SYMLINK);
     printf("========debug createsymlink ino: %d , isfile %d , issymlink %d\n", (int)ino_out,isfile(ino_out),issymlink(ino_out));
+    assert(ino_out > 0 && ino_out < 10000);
+    //lc->acquire(ino_out);
     this->write(ino_out, strlen(link), 0, link, bytes_written);
+    //lc->release(ino_out);
     printf("========debug writesymlink ino: %d , isfile %d , issymlink %d\n", (int)ino_out,isfile(ino_out),issymlink(ino_out));
+    //lc->release(parent);
     return r;
 }
 

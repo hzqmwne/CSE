@@ -4,11 +4,13 @@
 #include <string>
 //#include "yfs_protocol.h"
 #include "extent_client.h"
+#include "lock_client.h"
 #include <vector>
 
 
 class yfs_client {
   extent_client *ec;
+  lock_client *lc;
  public:
 
   typedef unsigned long long inum;
@@ -36,7 +38,7 @@ class yfs_client {
   static inum n2i(std::string);
 
  public:
-  yfs_client(std::string);
+  yfs_client(std::string, std::string);
 
   bool isfile(inum);
   bool isdir(inum);
