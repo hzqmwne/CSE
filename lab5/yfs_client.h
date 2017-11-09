@@ -11,7 +11,7 @@
 #include <vector>
 
 
-#define CA_FILE "./cert/ca.pem:
+#define CA_FILE "./cert/ca.pem"
 #define USERFILE	"./etc/passwd"
 #define GROUPFILE	"./etc/group"
 
@@ -82,6 +82,15 @@ class yfs_client {
   int mkdir(inum , const char *, mode_t , inum &);
 
   int verify(const char* cert_file, unsigned short*);
+
+/** you may need to add symbolic link related methods here.*/
+  int createTypeFile(inum, const char *, mode_t, inum &, extent_protocol::types);
+  bool issymlink(inum);
+  int getsymlink(inum, fileinfo &);
+  int readlink(inum, std::string &);
+  int symlink(inum, const char *, const char *);
+  
+  int rmdir(inum, const char *);
 };
 
 #endif 

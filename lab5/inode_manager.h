@@ -4,7 +4,7 @@
 #define inode_h
 
 #include <stdint.h>
-#include "extent_protocol.h" // TODO: delete it
+#include "extent_protocol.h"
 
 #define DISK_SIZE  1024*1024*16
 #define BLOCK_SIZE 512
@@ -51,8 +51,7 @@ class block_manager {
 #define INODE_NUM  1024
 
 // Inodes per block.
-#define IPB           1
-//(BLOCK_SIZE / sizeof(struct inode))
+#define IPB           (BLOCK_SIZE / sizeof(struct inode))
 
 // Block containing inode i
 #define IBLOCK(i, nblocks)     ((nblocks)/BPB + (i)/IPB + 3)
