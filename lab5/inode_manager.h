@@ -66,6 +66,45 @@ class block_manager {
 #define NINDIRECT (BLOCK_SIZE / sizeof(uint))
 #define MAXFILE (NDIRECT + NINDIRECT)
 
+
+
+/* ========================================================================== */
+/* ===================   Log-based Version Control   ======================== */
+/* ========================================================================== */
+
+enum InodeOperation {
+    CREATE_INODE = 0, WRITE_INODE = 1, REMOVE_INODE = 2, ERROR = -1, EMPTY = -2,
+};
+
+static InodeOperation InodeOperationMerge[3][3] = {{ERROR, CREATE_INODE, EMPTY}, {ERROR, WRITE_INODE, REMOVE_INODE}, {WRITE_INODE, ERROR, ERROR}};
+
+struct LogHeader {
+    int current_version;
+    int max_version;
+};
+
+struct CommitHeader {
+    int commit_id;
+    int entry_count;
+};
+
+struct CommittedLogEntry {
+    int ino;
+    InodeOperation operation;     // create/write/remove
+    int old_content_ino;    // for create, it is unused; for write and remove, it is the old ino
+    int current_content_backup_ino;    // for step forward
+};
+
+struct UncommittedLogEntry {
+    int ino;
+    InodeOperation operation;     // new/update/delete
+};
+
+/* ========================================================================== */
+/* === end ===========   Log-based Version Control   ================ end === */
+/* ========================================================================== */
+
+
 typedef struct inode {
   short type;
   unsigned int size;
@@ -81,6 +120,17 @@ class inode_manager {
   struct inode* get_inode(uint32_t inum);
   void put_inode(uint32_t inum, struct inode *ino);
 
+    // Log-based Version Control
+    int Enable_Log;
+    int Log_Start_From_Ino;
+    int Committed_Log_Ino;
+    int Uncommitted_Log_Ino;
+    int Version_Control_Log_Ino;
+    uint32_t allocInodeForLog();
+    void writeUncommittedLog(int ino, InodeOperation operation);
+    void writeVersionControlLog(int ino, InodeOperation operation);
+    void undoUncommittedOperations(std::map<int, InodeOperation> &ops);
+
  public:
   inode_manager();
   uint32_t alloc_inode(uint32_t type);
@@ -89,6 +139,11 @@ class inode_manager {
   void write_file(uint32_t inum, const char *buf, int size);
   void remove_file(uint32_t inum);
   void getattr(uint32_t inum, extent_protocol::attr &a);
+
+    // Log-based Version Control
+    void commit();
+    void rollBack();
+    void stepForward();
 };
 
 #endif

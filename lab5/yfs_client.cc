@@ -372,13 +372,15 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
     const char *directory = buf.c_str();
 
     DirectoryEntry *entry = (DirectoryEntry *)directory;
-	unsigned int count = a.size / sizeof(DirectoryEntry);
+    unsigned int count = a.size / sizeof(DirectoryEntry);
+    printf("=====debug===== yfs_client::readdir count:%d a.size:%d\n", count, a.size);
     for(int i = 0; i < (int)count; ++i) {
+        printf("=====debug===== yfs_client::readdir ino:%d name:%s\n",entry[i].ino, entry[i].name);
         if(entry[i].ino != 0) {
             dirent ent;
-			ent.name = entry[i].name;
-			ent.inum = entry[i].ino;
-			list.push_back(ent);
+            ent.name = entry[i].name;
+            ent.inum = entry[i].ino;
+            list.push_back(ent);
         }
     }
     return r;
@@ -491,14 +493,14 @@ int yfs_client::readlink(inum ino, std::string &link) {
     //lc->acquire(ino);
     ec->get(ino, link);
     //lc->release(ino);
-	return r;
+    return r;
 }
 
 //my own symlink
 int yfs_client::symlink(inum parent, const char *link, const char *name) {
     int r = OK;
     inum ino_out;
-	size_t bytes_written;
+    size_t bytes_written;
     //assert(parent > 0 && parent < 10000);
     //lc->acquire(parent);
     createTypeFile(parent, name, 0, ino_out, extent_protocol::T_SYMLINK);
@@ -516,3 +518,24 @@ int yfs_client::symlink(inum parent, const char *link, const char *name) {
 int yfs_client::rmdir(inum parent, const char *name) {
     return this->unlink(parent, name);    // this is not good !
 }
+
+/* ============================================================== */
+
+int yfs_client::commit() {
+    int r = OK;
+    ec->commit();
+    return r;
+}
+
+int yfs_client::rollBack() {
+    int r = OK;
+    ec->rollBack();
+    return r;
+}
+
+int yfs_client::stepForward() {
+    int r = OK;
+    ec->stepForward();
+    return r;
+}
+

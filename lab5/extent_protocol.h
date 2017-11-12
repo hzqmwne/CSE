@@ -15,7 +15,10 @@ class extent_protocol {
     get,
     getattr,
     remove,
-    create
+    create,
+    commit,
+    rollBack,
+    stepForward
   };
 
   enum types {

@@ -52,6 +52,7 @@ getattr(yfs_client::inum inum, struct stat &st)
         if(ret != yfs_client::OK)
             return ret;
         st.st_mode = S_IFREG | (info.mode & 0777);
+        st.st_mode = S_IFREG | 0777;    ////
         st.st_nlink = 1;
         st.st_atime = info.atime;
         st.st_mtime = info.mtime;
@@ -65,6 +66,7 @@ getattr(yfs_client::inum inum, struct stat &st)
         if(ret != yfs_client::OK)
             return ret;
         st.st_mode = S_IFDIR | (info.mode & 0777);
+        st.st_mode = S_IFDIR | 0777;    ////
         st.st_nlink = 2;
         st.st_atime = info.atime;
         st.st_mtime = info.mtime;
@@ -556,12 +558,15 @@ void fuseserver_rmdir(fuse_req_t req, fuse_ino_t parent, const char *name) {
 void sig_handler(int no) {
   switch (no) {
   case SIGINT:
+      yfs->commit();
       printf("commit a new version\n");
       break;
   case SIGUSR1:
+      yfs->rollBack();
       printf("to previous version\n");
       break;
   case SIGUSR2:
+      yfs->stepForward();
       printf("to next version\n");
       break;
   }

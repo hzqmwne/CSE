@@ -91,6 +91,10 @@ class yfs_client {
   int symlink(inum, const char *, const char *);
   
   int rmdir(inum, const char *);
+
+    int commit();
+    int rollBack();
+    int stepForward();
 };
 
 #endif 
