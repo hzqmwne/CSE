@@ -375,7 +375,6 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
     unsigned int count = a.size / sizeof(DirectoryEntry);
     printf("=====debug===== yfs_client::readdir count:%d a.size:%d\n", count, a.size);
     for(int i = 0; i < (int)count; ++i) {
-        printf("=====debug===== yfs_client::readdir ino:%d name:%s\n",entry[i].ino, entry[i].name);
         if(entry[i].ino != 0) {
             dirent ent;
             ent.name = entry[i].name;
