@@ -179,7 +179,7 @@ block_manager::write_block(uint32_t id, const char *buf)
 inode_manager::inode_manager()
 {
   bm = new block_manager();
-    this->Enable_Log = 1;
+    this->Enable_Log = 1;    // init Log-based Version Control
     if(this->Enable_Log) {
         this->Log_Start_From_Ino = 900;
         this->Committed_Log_Ino = this->allocInodeForLog();
@@ -195,17 +195,6 @@ inode_manager::inode_manager()
     printf("\tim: error! alloc first inode %d, should be 1\n", root_dir);
     exit(0);
   }
-    //////
-    char *tmp = (char *)malloc((8+64)*3);
-    *((unsigned long long *)tmp) = this->Committed_Log_Ino;
-    strcpy(tmp + 8, "Committed_Log_Ino");
-    *((unsigned long long *)(tmp+8+64)) = this->Uncommitted_Log_Ino;
-    strcpy(tmp + 8+64+8, "Uncommitted_Log_Ino");
-    *((unsigned long long *)(tmp+8+64+8+64)) = this->Version_Control_Log_Ino;
-    strcpy(tmp + 8+64+8+64+8, "Version_Control_Log_Ino");
-    this->write_file(root_dir, tmp, (8+64)*3);
-    free(tmp);
-    //////
     printf("=====debug===== init commmit start\n");
     this->commit();
     printf("=====debug===== init commmit end\n");
@@ -358,6 +347,7 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
   else {
     // file is too large !
   }
+    printf("================debug read_file ino:%d size:%d blocks[0]:%d content+4:%s\n", inum, *size, node->blocks[0], buf+4);
   *buf_out = buf;
   free(node);
 }
@@ -433,31 +423,35 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
     }
   }
 
-  printf("========debug write_file ino: %d size:%d",inum, size);
+  printf("========debug write_file ino: %d size:%d block[0]:%d ",inum, size, node->blocks[0]);
   if(new_block_count <= NDIRECT) {
     unsigned int i = 0;
     for(i = 0; i + 1 < new_block_count; ++i) {
       bm->write_block(node->blocks[i], buf + i*BLOCK_SIZE);
 printf(" %d ", node->blocks[i]);
     }
-    char *buf_block = (char *)malloc(BLOCK_SIZE);
-    memcpy(buf_block, buf + i*BLOCK_SIZE, (size+BLOCK_SIZE-1) % BLOCK_SIZE + 1);
-    bm->write_block(node->blocks[i], buf_block);
+    if(new_block_count >= 1) {    // important! if new_block_count==0, mustn't write!
+      char *buf_block = (char *)malloc(BLOCK_SIZE);
+      memcpy(buf_block, buf + i*BLOCK_SIZE, (size+BLOCK_SIZE-1) % BLOCK_SIZE + 1);
+      bm->write_block(node->blocks[i], buf_block);
 printf(" %d |i:%d| \n",node->blocks[i], i);
-    free(buf_block);
+      free(buf_block);
+    }
   }
   else {
     unsigned int i = 0;
     for(i = 0; i < NDIRECT; ++i) {
       bm->write_block(node->blocks[i], buf + i*BLOCK_SIZE);
     }
-  	for(i = 0; i + 1 < new_block_count - NDIRECT; ++i) {
+    for(i = 0; i + 1 < new_block_count - NDIRECT; ++i) {
       bm->write_block(indriect_block[i], buf + (i+NDIRECT)*BLOCK_SIZE);
     }
-    char *buf_block = (char *)malloc(BLOCK_SIZE);
-    memcpy(buf_block, buf + (i+NDIRECT)*BLOCK_SIZE, (size+BLOCK_SIZE-1) % BLOCK_SIZE + 1);
-    bm->write_block(indriect_block[i], buf_block);
-    free(buf_block);
+    if(new_block_count - NDIRECT >= 1) {    // important! if new_block_count==0, mustn't write!
+      char *buf_block = (char *)malloc(BLOCK_SIZE);
+      memcpy(buf_block, buf + (i+NDIRECT)*BLOCK_SIZE, (size+BLOCK_SIZE-1) % BLOCK_SIZE + 1);
+      bm->write_block(indriect_block[i], buf_block);
+      free(buf_block);
+    }
   }
   
   node->size = size;
@@ -561,6 +555,10 @@ uint32_t inode_manager::allocInodeForLog() {
                 node->size = 0;
                 bm->write_block(block_index, buf);
                 free(buf);
+                printf("=====debug===== allocInodeForLog %d\n", current_ino);
+                if(current_ino >= 1024) {
+                    printf("=====debug===== allocInodeForLog too many inodes !\n");
+                }
                 return current_ino;
             }
         }
@@ -578,8 +576,8 @@ void inode_manager::writeUncommittedLog(int ino, InodeOperation operation) {
     tmp->ino = ino;
     tmp->operation = operation;
     this->write_file(this->Uncommitted_Log_Ino, buf, new_size);
+    printf("=====debug===== writeUncommittedLog ino:%d operation:%d size:%d content+4:%s\n", ino, operation, new_size, buf+4);
     free(buf);
-    printf("=====debug===== writeUncommittedLog ino:%d operation:%d size:%d\n", ino, operation, new_size);
 }
 
 void inode_manager::writeVersionControlLog(int ino, InodeOperation operation) {
@@ -686,11 +684,7 @@ void inode_manager::undoUncommittedOperations(std::map<int, InodeOperation> &ops
                 int size2;
                 char *buf2;
                 this->read_file(old_content_ino, &buf2, &size2);
-                printf("=====debug===== undouncommit old_ino:%d size:%d content:%s\n", old_content_ino, size2, buf2);
                 this->write_file(it->first, buf2, size2);
-                if(it->first == 1) {
-                    printf("=====debug===== content ino:%d size:%d old_ino:%d entry2:ino:%d name:%s\n", it->first, size2, old_content_ino, *(unsigned long long *)(buf2+8+64), buf2+8+64+8);
-                }
                 free(buf2);
                 break;
             }
@@ -718,13 +712,16 @@ void inode_manager::commit() {
     char *buf;
     this->read_file(this->Version_Control_Log_Ino, &buf, &size);
     UncommittedLogEntry *tmp = (UncommittedLogEntry *)buf;
+    printf("=====debug===== begin read Version_Control_Log_Ino size:%d\n",size);
     mergeOperations(tmp, size/sizeof(UncommittedLogEntry), ops);    // ops will be modified
     this->write_file(this->Version_Control_Log_Ino, "", 0);
     free(buf);
-    printf("=====debug===== begin read_file uncommitted_log\n");
+    buf = NULL;
     this->read_file(this->Uncommitted_Log_Ino, &buf, &size);
     printf("=====debug===== end read_file uncommitted_log\n");
+    printf("=====debug===== read_file uncommitted_log content:%s\n", buf+4);
     tmp = (UncommittedLogEntry *)buf;
+    printf("=====debug===== begin read Uncommitted_Log_Ino size:%d\n",size);
     mergeOperations(tmp, size/sizeof(UncommittedLogEntry), ops);    // ops will be modified
     this->write_file(this->Uncommitted_Log_Ino, "", 0);
     free(buf);
@@ -765,17 +762,7 @@ void inode_manager::commit() {
             char *buf2;
             this->read_file(it->first, &buf2, &size2);
             this->write_file(entry.current_content_backup_ino, buf2, size2);
-            if(it->first == 1) {
-                printf("=====debug===== content ino:%d size:%d backup_ino:%d entry2:ino:%d name:%s\n", it->first, size2, entry.current_content_backup_ino, *(unsigned long long *)(buf2+8+64), buf2+8+64+8);
-            }
             free(buf2);
-            {
-                int size2;
-                char *buf2;
-                this->read_file(entry.current_content_backup_ino, &buf2, &size2);
-                printf("=====debug===== special content ino:%d size:%d backup_ino:%d entry2:ino:%d name:%s\n", entry.current_content_backup_ino, size2, entry.current_content_backup_ino, *(unsigned long long *)(buf2+8+64), buf2+8+64+8);
-                printf("=====debug===== special content2 ino:%d size:%d content:%s\n", entry.current_content_backup_ino, size2, buf2);
-            }
         }
         if(it->second == WRITE_INODE || it->second == REMOVE_INODE) {
             entry.old_content_ino = getOldContentIno(it->first, buf, earlierCommitOffset, earlierCommitCount);
@@ -795,6 +782,7 @@ void inode_manager::commit() {
 }
 
 void inode_manager::rollBack() {
+    printf("=====debug===== rollback start\n");
     if(this->Enable_Log == 0) {
         return;
     }
@@ -808,7 +796,7 @@ void inode_manager::rollBack() {
         this->read_file(this->Uncommitted_Log_Ino, &buf, &size);
         UncommittedLogEntry *tmp = (UncommittedLogEntry *)buf;
         mergeOperations(tmp, size/sizeof(UncommittedLogEntry), ops);
-        printf("=====debug===== rollback node->size!=0 size:%d ops.size():%d\n", size, ops.size());
+        printf("=====debug===== rollback node->size!=0 size:%d ops.size():%d\n", size, (int)ops.size());
         this->undoUncommittedOperations(ops);
         this->write_file(this->Uncommitted_Log_Ino, "", 0);
         printf("=====debug===== rollback node->size!=0 \n");
@@ -868,11 +856,12 @@ void inode_manager::rollBack() {
     --(lh->current_version);
     this->write_file(this->Committed_Log_Ino, buf, size);
     this->Enable_Log = 1;
-    free(buf);
     printf("=====debug===== rollback, current version %d\n", lh->current_version);
+    free(buf);
 }
 
 void inode_manager::stepForward() {
+    printf("=====debug===== stepForward start\n");
     if(this->Enable_Log == 0) {
         return;
     }
@@ -931,8 +920,12 @@ void inode_manager::stepForward() {
         }
     }
     ++(lh->current_version);
+    if(lh->current_version == lh->max_version) {
+        this->write_file(this->Version_Control_Log_Ino, "", 0);
+    }
     this->write_file(this->Committed_Log_Ino, buf, size);
     this->Enable_Log = 1;
+    printf("=====debug===== stepForward current_version:%d\n", lh->current_version);
     free(buf);
 }
 
