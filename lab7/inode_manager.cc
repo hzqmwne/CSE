@@ -17,33 +17,95 @@ disk::disk()
 	  printf("FILE %s line %d:Create pthread error\n", __FILE__, __LINE__);
 }
 
+static char encodeData(char d) {
+	char d0 = d & 1;    // d: data bit, only use its lower 4 bits
+	char d1 = (d >> 1) & 1;
+	char d2 = (d >> 2) & 1;
+	char d3 = (d >> 3) & 1;
+	char c0 = d0 ^ d2;    // c: check bit
+	char c1 = d0 ^ d1;
+	char c2 = d0 ^ d1 ^ d2 ^ d3;
+	char c3 = d0 ^ d1 ^ d2 ^ d3;
+	char r = (d << 4) | (c3 << 3) | (c2 << 2) | (c1 << 1) | c0;
+	return r;    // the higer 4 bits is origin data, the lower 4 bits are check bits
+}
+
+static char errorBitIndex(char c) {    // c is encoded data
+	char d = (c >> 4) & 0x0F;
+	char newd = encodeData(d);
+	return (~(c ^ newd)) & 0x0F;
+}
+
+static char decodeData(char e1, char e2) {    // e1 and e2 are encoded datas for the same source data !
+	char i1 = errorBitIndex(e1);
+	char i2 = errorBitIndex(e2);
+	char d;
+	if(i1 == 0x0F) {    // e1 is correct
+		d = (e1 >> 4) & 0x0F;
+	}
+	else if(i2 == 0x0F) {    // e2 is correct
+		d = (e2 >> 4) & 0x0F;
+	}
+	else if(i1 >= 0 && i1 < 4) {    // treat as e1 has only data bit error
+		d = ((e1 >> 4) ^ (1 << i1)) & 0x0F;
+	}
+	else {    // treat as e1 has only one check bit error
+		d = (e1 >> 4) & 0x0F;
+	}
+	return d;
+}
+
 void
 disk::read_block(blockid_t id, char *buf)
 {
-  /*
-   *your lab1 code goes here.
-   *if id is smaller than 0 or larger than BLOCK_NUM 
-   *or buf is null, just return.
-   *put the content of target block into buf.
-   *hint: use memcpy
-  */
-  if(id < 0 || id >= BLOCK_NUM || buf == NULL) {
+  if(id < 0 || id * 4 >= BLOCK_NUM || buf == NULL) {
   	return;
   }
-  memcpy(buf, this->blocks[id], BLOCK_SIZE);
+  assert(BLOCK_SIZE % 4 == 0);
+  char (*tmpbuf)[BLOCK_SIZE] = (char (*)[BLOCK_SIZE])malloc(BLOCK_SIZE * 4);
+  memcpy(tmpbuf[0], this->blocks[4*id], BLOCK_SIZE);
+  memcpy(tmpbuf[1], this->blocks[4*id+1], BLOCK_SIZE);
+  memcpy(tmpbuf[2], this->blocks[4*id+2], BLOCK_SIZE);
+  memcpy(tmpbuf[3], this->blocks[4*id+3], BLOCK_SIZE);
+  for(int i = 0; i < 4; ++i) {
+  	for(int j = 0; j < BLOCK_SIZE / 4; ++j) {
+      char e11 = tmpbuf[i][4*j];
+      char e12 = tmpbuf[i][4*j+1];
+      char e21 = tmpbuf[i][4*j+2];
+      char e22 = tmpbuf[i][4*j+3];
+      char d1 = decodeData(e11, e12);
+      char d2 = decodeData(e21, e22);
+	  char d = (d1 << 4) | (d2 & 0x0F);
+      buf[i*BLOCK_SIZE/4+j] = d;
+    }
+  }
+  free(tmpbuf);
 }
 
 void
 disk::write_block(blockid_t id, const char *buf)
 {
-  /*
-   *your lab1 code goes here.
-   *hint: just like read_block
-  */
-  if(id < 0 || id >= BLOCK_NUM || buf == NULL) {
+  if(id < 0 || id * 4 >= BLOCK_NUM || buf == NULL) {
   	return;
   }
-  memcpy(this->blocks[id], buf, BLOCK_SIZE);
+  assert(BLOCK_SIZE % 4 == 0);
+  char (*tmpbuf)[BLOCK_SIZE] = (char (*)[BLOCK_SIZE])malloc(BLOCK_SIZE * 4);
+  for(int i = 0; i < 4; ++i) {
+  	for(int j = 0; j < BLOCK_SIZE / 4; ++j) {
+      char data = buf[i*BLOCK_SIZE/4+j];
+      char e1 = encodeData((data >> 4) & 0x0F);
+      char e2 = encodeData(data & 0x0F);
+      tmpbuf[i][4*j] = e1;
+      tmpbuf[i][4*j+1] = e1;
+      tmpbuf[i][4*j+2] = e2;
+      tmpbuf[i][4*j+3] = e2;
+    }
+  }
+  memcpy(this->blocks[4*id], tmpbuf[0], BLOCK_SIZE);
+  memcpy(this->blocks[4*id+1], tmpbuf[1], BLOCK_SIZE);
+  memcpy(this->blocks[4*id+2], tmpbuf[2], BLOCK_SIZE);
+  memcpy(this->blocks[4*id+3], tmpbuf[3], BLOCK_SIZE);
+  free(tmpbuf);
 }
 
 // block layer -----------------------------------------
@@ -188,7 +250,7 @@ block_manager::write_block(uint32_t id, const char *buf)
 inode_manager::inode_manager()
 {
   bm = new block_manager();
-    this->Enable_Log = 1;    // init Log-based Version Control
+    this->Enable_Log = 0;    // init Log-based Version Control
     if(this->Enable_Log) {
         this->Log_Start_From_Ino = 900;
         this->Committed_Log_Ino = this->allocInodeForLog();
