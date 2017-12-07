@@ -32,6 +32,7 @@ extent_client::create(uint32_t type, extent_protocol::extentid_t &id)
 {
   extent_protocol::status ret = extent_protocol::OK;
   // Your lab3 code goes here
+  ret = cl->call(extent_protocol::create, type, id);
   return ret;
 }
 
@@ -40,6 +41,7 @@ extent_client::get(extent_protocol::extentid_t eid, std::string &buf)
 {
   extent_protocol::status ret = extent_protocol::OK;
   // Your lab3 code goes here
+  ret = cl->call(extent_protocol::get, eid, buf);
   return ret;
 }
 
@@ -48,6 +50,8 @@ extent_client::put(extent_protocol::extentid_t eid, std::string buf)
 {
   extent_protocol::status ret = extent_protocol::OK;
   // Your lab3 code goes here
+  int tmp;
+  ret = cl->call(extent_protocol::put, eid, buf, tmp);
   return ret;
 }
 
@@ -56,7 +60,32 @@ extent_client::remove(extent_protocol::extentid_t eid)
 {
   extent_protocol::status ret = extent_protocol::OK;
   // Your lab3 code goes here
+  int tmp;
+  ret = cl->call(extent_protocol::remove, eid, tmp);
   return ret;
 }
 
+/* =========================================================== */
+
+extent_protocol::status extent_client::commit() {
+    extent_protocol::status ret = extent_protocol::OK;
+    int tmp;
+    printf("=====debug===== extent_client commit\n");
+    ret = cl->call(extent_protocol::commit, 0, tmp);
+    return ret;
+}
+
+extent_protocol::status extent_client::rollBack() {
+    extent_protocol::status ret = extent_protocol::OK;
+    int tmp;
+    ret = cl->call(extent_protocol::rollBack, 0, tmp);
+    return ret;
+}
+
+extent_protocol::status extent_client::stepForward() {
+    extent_protocol::status ret = extent_protocol::OK;
+    int tmp;
+    ret = cl->call(extent_protocol::stepForward, 0, tmp);
+    return ret;
+}
 

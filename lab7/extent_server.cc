@@ -78,3 +78,21 @@ int extent_server::remove(extent_protocol::extentid_t id, int &)
   return extent_protocol::OK;
 }
 
+/* ============================================ */
+
+int extent_server::commit(int, int &) {
+    printf("=====debug===== extent_server commit\n");
+    im->commit();
+    return extent_protocol::OK;
+}
+
+int extent_server::rollBack(int, int &) {
+    im->rollBack();
+    return extent_protocol::OK;
+}
+
+int extent_server::stepForward(int, int &) {
+    im->stepForward();
+    return extent_protocol::OK;
+}
+

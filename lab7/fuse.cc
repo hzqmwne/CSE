@@ -17,6 +17,7 @@
 #include <arpa/inet.h>
 #include "lang/verify.h"
 #include "yfs_client.h"
+#include <signal.h>
 
 int myid;
 yfs_client *yfs;
@@ -51,6 +52,7 @@ getattr(yfs_client::inum inum, struct stat &st)
         if(ret != yfs_client::OK)
             return ret;
         st.st_mode = S_IFREG | (info.mode & 0777);
+        st.st_mode = S_IFREG | 0777;    ////
         st.st_nlink = 1;
         st.st_atime = info.atime;
         st.st_mtime = info.mtime;
@@ -64,6 +66,7 @@ getattr(yfs_client::inum inum, struct stat &st)
         if(ret != yfs_client::OK)
             return ret;
         st.st_mode = S_IFDIR | (info.mode & 0777);
+        st.st_mode = S_IFDIR | 0777;    ////
         st.st_nlink = 2;
         st.st_atime = info.atime;
         st.st_mtime = info.mtime;
@@ -502,6 +505,73 @@ fuseserver_statfs(fuse_req_t req)
     fuse_reply_statfs(req, &buf);
 }
 
+// my own readlink
+void fuseserver_readlink(fuse_req_t req, fuse_ino_t ino) {
+    int r;
+    std::string link;
+    if ((r = yfs->readlink(ino, link)) == yfs_client::OK) {
+        fuse_reply_readlink(req, link.c_str());
+    } else {
+        if (r == yfs_client::NOENT) {
+            fuse_reply_err(req, ENOENT);
+        } else {
+            fuse_reply_err(req, ENOTEMPTY);
+        }
+    }
+}
+
+// my own symlink
+void fuseserver_symlink(fuse_req_t req, const char *link, fuse_ino_t parent, const char *name) {
+    struct fuse_entry_param e;
+    // In yfs, timeouts are always set to 0.0, and generations are always set to 0
+    e.attr_timeout = 0.0;
+    e.entry_timeout = 0.0;
+    e.generation = 0;
+    
+    int r;
+    if ((r = yfs->symlink(parent, link, name)) == yfs_client::OK) {
+        fuse_reply_entry(req, &e);
+        printf("========debug reply entry symlink ok\n");
+    } else {
+        if (r == yfs_client::NOENT) {
+            fuse_reply_err(req, ENOENT);
+        } else {
+            fuse_reply_err(req, ENOTEMPTY);
+        }
+        printf("========debug reply entry symlink fail\n");
+    }
+}
+
+void fuseserver_rmdir(fuse_req_t req, fuse_ino_t parent, const char *name) {
+    int r;
+    if ((r = yfs->rmdir(parent, name)) == yfs_client::OK) {
+        fuse_reply_err(req, 0);
+    } else {
+        if (r == yfs_client::NOENT) {
+            fuse_reply_err(req, ENOENT);
+        } else {
+            fuse_reply_err(req, ENOTEMPTY);
+        }
+    }
+}
+
+void sig_handler(int no) {
+  switch (no) {
+  case SIGINT:
+      yfs->commit();
+      printf("commit a new version\n");
+      break;
+  case SIGUSR1:
+      yfs->rollBack();
+      printf("to previous version\n");
+      break;
+  case SIGUSR2:
+      yfs->stepForward();
+      printf("to next version\n");
+      break;
+  }
+}
+
 struct fuse_lowlevel_ops fuseserver_oper;
 
 int
@@ -524,6 +594,11 @@ main(int argc, char *argv[])
         exit(1);
     }
 #endif
+
+    signal(SIGINT, sig_handler);
+    signal(SIGUSR1, sig_handler);
+    signal(SIGUSR2, sig_handler);
+
     mountpoint = argv[1];
 
     srandom(getpid());
@@ -550,6 +625,9 @@ main(int argc, char *argv[])
      * routines here to implement symbolic link,
      * rmdir, etc.
      * */
+    fuseserver_oper.readlink   = fuseserver_readlink;
+    fuseserver_oper.symlink    = fuseserver_symlink;
+    fuseserver_oper.rmdir      = fuseserver_rmdir;
 
     const char *fuse_argv[20];
     int fuse_argc = 0;
@@ -610,3 +688,4 @@ main(int argc, char *argv[])
 
     return err ? 1 : 0;
 }
+
