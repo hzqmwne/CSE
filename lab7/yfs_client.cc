@@ -126,11 +126,13 @@ yfs_client::getfile(inum inum, fileinfo &fin)
     extent_protocol::attr a;
     //assert(inum > 0 && inum < 10000);
     //lc->acquire(inum);
+	lc->acquire(0);
     if (ec->getattr(inum, a) != extent_protocol::OK) {
         //lc->release(inum);
         r = IOERR;
         goto release;
     }
+	lc->release(0);
     //lc->release(inum);
 
     fin.atime = a.atime;
