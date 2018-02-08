@@ -423,10 +423,9 @@ int yfs_client::readlink(inum ino, std::string &link) {
 }
 
 //my own symlink
-int yfs_client::symlink(inum parent, const char *link, const char *name) {
+int yfs_client::symlink(inum parent, const char *link, const char *name, inum &ino_out) {
     int r = OK;
-    inum ino_out;
-	size_t bytes_written;
+    size_t bytes_written;
     createTypeFile(parent, name, 0, ino_out, extent_protocol::T_SYMLINK);
     printf("========debug createsymlink ino: %d , isfile %d , issymlink %d\n", (int)ino_out,isfile(ino_out),issymlink(ino_out));
     this->write(ino_out, strlen(link), 0, link, bytes_written);

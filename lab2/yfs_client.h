@@ -59,7 +59,7 @@ class yfs_client {
   bool issymlink(inum);
   int getsymlink(inum, fileinfo &);
   int readlink(inum, std::string &);
-  int symlink(inum, const char *, const char *);
+  int symlink(inum, const char *, const char *, inum &);
   
   int rmdir(inum, const char *);
 };

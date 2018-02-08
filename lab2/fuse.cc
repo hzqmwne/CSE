@@ -493,7 +493,10 @@ void fuseserver_symlink(fuse_req_t req, const char *link, fuse_ino_t parent, con
     e.generation = 0;
     
     int r;
-    if ((r = yfs->symlink(parent, link, name)) == yfs_client::OK) {
+    yfs_client::inum inum;
+    if ((r = yfs->symlink(parent, link, name, inum)) == yfs_client::OK) {
+        e.ino = inum;
+        (void)getattr(inum, e.attr);
         fuse_reply_entry(req, &e);
         printf("========debug reply entry symlink ok\n");
     } else {
