@@ -1,0 +1,39 @@
+https://ipads.se.sjtu.edu.cn/courses/cse/2017/labs/lab1.html
+
+需要修改inode_manager.cc
+
+
+disk的结构：|<-super block->|<-free block bitmap->|<-inode table->|<-data->|
+
+disk层以块（block）为单位进行读写（super block保存整个磁盘的元数据）
+block_manager层管理块的分配，在alloc_block和free_block时需要维护bitmap
+inode_manager层抽象出了文件（广义）的概念。在<-inode table->中保存文件的元数据（inode），在<-data->中保存文件内容
+
+inode_manager.h中几个宏的含义：
+#define DISK_SIZE  1024*1024*16              // 整个disk的字节数
+#define BLOCK_SIZE 512                       // 每个block的字节数
+#define BLOCK_NUM  (DISK_SIZE/BLOCK_SIZE)    // block的个数，这里等于512*64
+#define INODE_NUM  1024                      // inode的最大数目
+#define IPB           1
+//(BLOCK_SIZE / sizeof(struct inode))        // 每个block最多保存几个inode
+#define BPB           (BLOCK_SIZE*8)         // 每个block保存多少个bitmap的bit，这里等于512*8
+#define IBLOCK(i, nblocks)     ((nblocks)/BPB + (i)/IPB + 3)    // 第i个inode所在的block号。IBLOCK(0,BLOCK_NUM)为11，IBLOCK(INODE_NUM,BLOCK_NUM)为1035
+// Block containing bit for block b
+#define BBLOCK(b) ((b)/BPB + 2)              // 第b个block对应bitmap中的bit所在的block号。BBLOCK(0)为2，BBLOCK(BLOCK_NUM)为10
+#define NDIRECT 32                           // 文件内容 直接块的最大个数
+#define NINDIRECT (BLOCK_SIZE / sizeof(uint))    // 文件内容 间接块的最大个数，这里是128
+#define MAXFILE (NDIRECT + NINDIRECT)        // 文件内容最多占据的data块的个数（32+128=160个block，文件大小上限为160*BLOCK_SIZE=160*512B=80KB）
+
+按照以上的宏，
+<-super block->占用了block 0
+<-free block bitmap->占用了block 2~9
+<-inode table->占用了block 11~1034  （inode编号0~1023）
+<-data->占用了block 1036~
+
+
+注：lab1/inode_manager.cc的实现有很多bug，在后续lab中逐步修复。
+第388行：第二个new_block_count应为old_block_count（在lab2中修复）
+第479、480行：两个node->size应为old_block_count（在lab2中修复）
+第418行：new_block_count为0时node->blocks[i]的值无意义，不应write_block（在lab5中修复）
+（lab5/inode_manager.cc是修复了目前发现的所有bug的版本。）
+

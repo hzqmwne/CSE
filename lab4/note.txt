@@ -1,0 +1,32 @@
+https://ipads.se.sjtu.edu.cn/courses/cse/2017/labs/lab4.html
+
+合并之前lab的更改（git merge 的冲突可能很多，可以尝试手动合并……）
+
+
+Part 1：
+需要修改lock_server.cc和lock_client.cc
+client通过RPC调用server中的函数。
+按照lab说明中的Detailed Guidance，server端通过std::map保存每个lock的状态。对client端的每一个调用，服务端都会创建一个新的线程处理。pthread_mutex_t 和 pthread_cond_t 配合，以完成多线程下对共享变量（这里是std::map保存的lock的状态）的读写。
+
+
+Part 2：
+需要修改yfs_client.cc
+在可能产生并发竞争的位置调用lock_client加锁。
+
+在yfs_client层，所有可能改变文件大小或增删文件的操作（create、write、mkdir、unlink等）都不能并发（即使在不同的目录下），否则，有可能为两个文件分配同一个空的block（block_manager层）或inode（inode_manager层），产生错误。
+不能同时修改两个文件的元数据。如果这两个文件的元数据inode恰好在同一个block中，可能只有一个修改能成功（disk的读写以block为单位，即使只写其中一个inode，也要先读出整个block再写回）（虽然inode_manager.h中默认定义了IPB为1……）
+正在被修改的文件不应被读取以防止读出错误数据（特别是目录文件，如果读出了错误的inode号，会导致后续读文件也出错）。
+
+一种加锁的策略：
+考虑三种锁，全局锁（acquire(0)，用于涉及到 文件大小修改（block分配）、增删文件（inode分配）、元数据修改 的操作）、当前文件inode号的锁（acquire(ino)）、父目录inode号的锁（acquire(parent)）
+yfs_client中所有与fuse接口的函数都要加锁，而且加锁操作只在这些函数中进行（防止死锁）。
+对于 create、mkdir等 只需要修改 父目录文件 的操作，先acquire(0)，再acquire(parent)
+对于 unlink等 既要修改 父目录文件 也要修改 当前文件 的操作，先acquire(0)，再acquire(parent)，还要acquire(ino)
+对于 write、setattr等 只需要修改 当前文件 但可能改变文件大小或元数据的操作，先acquire(0)，再acquire(ino)
+对于 read、getfile等 只读操作，仅acquire(ino)（注意这里没有实现对atime的记录，所以getfile等操作是只读的）
+
+（上面的策略能够确保不存在对同一个文件并发的写（全局锁acquire(0)）、不存在正在读的文件被写或删除（acquire(ino)）等，允许对同一个文件并发的读（这是大多数应用场景）；但没有经过验证，可能有bug）
+（最简单的策略是所有的操作都加全局锁（acquire(0)），但不允许并发的读会导致严重的效率损失）
+
+lab4的yfs_client.cc没有按照上面的策略实现，而且有一些bug，在lab5和lab7中被简单修复（可能还有隐藏的bug），参见lab5/note.txt和lab7/note.txt
+

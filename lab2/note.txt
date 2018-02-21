@@ -1,0 +1,39 @@
+https://ipads.se.sjtu.edu.cn/courses/cse/2017/labs/lab2.html
+
+需要合并lab1对inode_manager.cc的修改，还要修改yfs_client.cc和fuse.cc
+（不一定严格按照lab的说明进行git操作）
+
+yfs_client在inode_manager的基础上抽象出了文件类型（普通文件、目录文件、符号链接），并提供了与 系统调用 对接的接口。
+
+===========
+
+Part1：
+需要设计目录文件的结构。目录文件（dir）需要保存inode number与文件名的映射关系。为了简单，这里固定了最大文件名长度，线性排列所有的映射结构（yfs_client.cc第188行），读取和写入都要顺序遍历。
+
+Part2：
+yfs_client的read是先读出整个文件再取需要的部分，而write也是先读整个文件，修改，再全部写回。（受限于inode_manager的read_file和write_file接口只能整体读写）
+setattr在改写文件大小（size）时需要调整block的分配情况，这点与write相同，因此采用与write相同的方式处理。setattr对其他属性的修改这里没有实现。
+
+Part3：
+mkdir与create几乎相同，只是文件属性标记为目录。
+由于这里没有实现硬链接，所以不需要维护inode层的引用计数，unlink直接删除文件即可。
+
+Part4：
+符号链接（symbol link）文件的内容是 目标文件的路径。
+需要在fuse_lowlevel_ops结构中填充相关函数（fuse.cc，第572-574行），相关规则可参考fuse_lowlevel.h文件中的注释。（fuse_lowlevel.h可能位于/usr/include/fuse或/usr/local/include/fuse，视具体情况而定）
+在yfs_client::getattr中，如果读到一个符号链接文件，需要把stat结构体的st_mode的file type部分赋值为S_IFLINK，之后通过fuse_reply_readlink函数（fuse.cc，第477行）返回目标文件路径字符串。创建符号链接文件时注意fuse_reply_entry函数（fuse.cc，第500行）传入的fuse_entry_param结构体要填充完整（特别不要漏掉ino和attr两个属性）。
+
+===========
+
+测试脚本会在单个目录创建大量的文件，注意Part1设计的目录文件结构要能容纳足够多的文件。
+
+如果测试后留下的yfs1文件夹无法删除（可能是程序异常退出导致fuse卸载失败），尝试反复运行 stop.sh 。
+
+test-lab-2-f.sh是一个隐藏的ROBUSTNESS test，没有在grade.sh中调用。
+
+修复了inode_manager.cc中的部分bug：
+第392行：第二个new_block_count改为old_block_count
+第487、488行：两个node->size改为old_block_count
+
+添加了ctime和mtime（inode_manager.cc，第443行）
+

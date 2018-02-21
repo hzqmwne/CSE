@@ -1,0 +1,17 @@
+https://ipads.se.sjtu.edu.cn/courses/cse/2017/labs/lab6.html
+https://ipads.se.sjtu.edu.cn/courses/cse/2017/labs/lab6-ref.html
+
+这个lab与yfs文件系统没有任何关系……也不需要合并之前lab的任何修改。
+只需要完成paxos.cc中的五个函数：proposer类的prepare、accept、decide函数 和 acceptor类的preparereq、acceptreq函数。
+
+重点关注paxos.cc、paxos.h、paxos_protocol.h、handle.h、log.h。
+
+lab6-ref给出了伪代码，分别对应pasos.cc中的proposer::run、acceptor::preparereq、acceptor::acceptreq、acceptor::decidereq函数。
+
+proposer通过rpc调用acceptor的函数进行通信。lab6的rpc调用方法与之前相比有变化，参见handle.h中的注释说明。
+
+proposer::prepare和proposer::accept函数的std::vector<std::string> nodes参数是所有acceptor的标识符，用来构造handle对象以进行rpc调用（参见handle.h）。std::vector<std::string> &accepts参数存储accepted的nodes。
+
+注意proposer::prepare（paxos.cc, 第167行）中对rpc的返回值的检测，虽然在acceptor::preparereq（paxos.cc, 第255行）中一定返回OK，但由于进程可能被kill掉，实际的返回值不一定是OK。
+paxos_protocol::status只应表示rpc通信的状态；rpc调用的函数的输出值（例如是否accept一个propose）应由引用参数返回（acceptor::preparereq的paxos_protocol::prepareres &r，以及acceptor::acceptreq的bool &r）。
+

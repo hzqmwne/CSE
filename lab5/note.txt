@@ -1,0 +1,93 @@
+https://ipads.se.sjtu.edu.cn/courses/cse/2017/labs/lab5.html
+
+注意lab5的fuse.cc和yfs_client.h与lab4相比有较大的变化，合并时需要注意
+
+需要实现一个简单的版本控制机制，支持提交（commit）、回滚（roll back）、前进（step forward）三种操作。
+
+如果只为了通过测试，有一种简单的方法：在每次commit时备份disk类（inode_manager.h）的blocks数组，在roll back和step forward时取对应的版本即可。
+另一种方法，可以记录文件系统自初始化以来所有产生影响的函数调用序列，在roll back和step forward时重新初始化文件系统，按照记录依次调用这些函数。
+（并且，这些信息可以只保存在内存中）
+
+
+这里使用简单的日志系统实现版本控制，没有采用上面的方法。
+
+对文件系统产生影响的三类操作：创建（create）、修改（write）、删除（delete）。每一个操作都要记录日志，为后面roll back和step forward提供数据。
+
+如果在yfs_client层记录日志，由于yfs_client用inode号识别文件，但又无法指定创建的新文件的inode号，可能会产生矛盾。
+例如，/d/a，根目录下有d目录（位于inode 2），d目录下面有a文件（位于inode 3）。
+如果先删除文件a（注意yfs_client::unlink函数只知道a的父目录的inode号为2，并不知道父目录是d），再删除目录d：
+roll back时重新创建的目录d（yfs_client::mkdir）不一定仍位于inode 2（例如位于inode 4），再创建文件a的时候（yfs_client::create）如果仍按照日志记录以inode 2为父目录，就会产生错误；如果跟踪目录d的inode号变化，实现会很复杂。
+
+========================================================================
+
+因此，这里 日志记录 和 版本控制 都在inode_manager层实现。（inode_manager也用inode号识别文件，但可以通过put_inode函数强行修改任意inode）
+下面是只是具体实现的描述，并不是唯一方案：
+
+三个日志文件（inode_manger.h）：
+Committed_Log：保存每次Commit的文件变化（由inode_manager::commit函数记录）
+    |--LogHeader--|--CommitHeader--|--CommittedLogEntry--|--CommittedLogEntry--|--...--|--CommitHeader--|--CommittedLogEntry--|--CommittedLogEntry--|--...--|
+    开头的LogHeader保存当前版本和最大版本，之后是每次提交的记录（包含记录头和若干个记录项）
+    关于CommittedLogEntry：
+        int ino;    // 当前提交与上一次提交之间有变化的inode
+        InodeOperation operation;     // 对该inode的操作，create/write/remove
+        int old_content_ino;    // 记录inode在上一次提交时的备份inode，对于create无效
+        int current_content_backup_ino;    // 记录inode在当前提交时的备份inode，主要针对step forward
+    ps：这些信息不一定要在commit中保存，也可以在rollback时再计算
+Uncommitted_Log：保存尚未Commit的文件变化（由alloc_inode、write_file、remove_file操作修改）
+    |--UncommittedLogEntry--|--UncommittedLogEntry--|--...--|
+    每当alloc_inode、write_file、remove_file操作进行，直接追加一条记录
+    （测试程序存在修改文件后未commit就直接roll back的情况（test-lab-5.c，第479行），所以设了这个log文件）
+Version_Control_Log：保存Roll back和Step forward过程的文件变化（由Roll back和Step forward操作修改）
+    文件格式与Uncommitted_Log相同
+
+机制：
+初始化时提交id为0,之后每一次commit相当于创建了一个检查点，Roll back是回到上一个检查点的状态，Step forward是进入下一个检查点的状态
+
+特殊情况：
+commit后文件有修改：此时Roll back直接回滚这些未提交的修改
+step forward后文件有修改并commit：新版本续接在原来最后一个版本后而不是step forward的版本
+step forward后文件有修改但未commit：此时Roll back直接回滚这些未提交的修改，并禁止在此时Step forward
+
+实现：
+Commit：先处理Version_Control_Log的操作，再处理Uncommitted_Log的操作，增大最大版本号并记录，把产生变化的文件（inode）备份到新的inode中，添加Committed_Log
+Roll back：如果Uncommitted_Log不为空，直接回滚这些操作，不修改当前版本号和最大版本号；否则，当前版本号回到减一的状态
+Step forward：如果Uncommitted_Log为空，进入当前版本号加一的状态，；否则，拒绝此操作
+
+allocInodeForLog：为 日志文件 和 备份文件 分配inode，这些inode使用比Log_Start_From_Ino大的inode号以避免与普通文件冲突
+writeUncommittedLog：在alloc_inode、write_file、remove_file中调用，记录日志
+writeVersionControlLog：在rollBack和stepForward中调用（注意undoUncommittedOperations中不调用），这样若stepForward后在旧版本的基础上进行提交，用这些信息能够使这次提交续接在最新版本后面而不是当前的旧版本，保持commit记录的线性连续
+getOldContentIno：根据Committed_Log的文件内容和每个CommitHeader在该文件中的偏移量，从高版本到底版本，顺次查找ino上一次的提交时保留的备份（current_content_backup_ino）
+mergeOperations：合并map和Uncommitted_Log中的日记记录以缩小规模，具体规则如下：
+    在两次commit之间，对同一个inode的两次操作可以合并为为一次操作：
+            new   CREATE_INODE  WRITE_INODE  REMOVE_INODE
+    old
+    CREATE_INODE  error         create       empty
+    WRITE_INODE   error         write        remove
+    REMOVE_INODE  write         error        error
+undoUncommittedOperations：对文件进行了操作但没有提交，此时若rollback需要特殊处理
+
+潜在的坑：
+realloc可能会改变指针的值
+计算指针偏移量容易失误（特别是遍历Committed_Log时）
+备份或还原inode时，struct inode结构体不能直接覆盖，因为struct inode记录了为该inode分配的block（若该inode被删，这些block可能被其他inode使用）。应该新建一个inode（备份时）或指定原来的inode号（还原时），只覆盖inode.type，置inode.size为0，然后用write_inode修改内容（这会重新分配block，同时保证还原后的inode号与最初相同）。
+未测试在step forward后修改文件并commit的操作，这种情况可能有实现上bug
+
+========================================================================
+
+Enable_Log变量（inode_manager.cc，第124行）：用来控制是否记录日志。
+
+在inode_manager中添加的commit、rollBack、stepForward函数，需要穿过extent_server、RPC、extent_client、yfs_client到达fuse。需要在extent_smain.cc中注册这三个函数，且extent_server中的函数原型至少有一个引用参数（rpc/rpc.h，第115行）。
+
+在fuse.cc中需要注册信号处理程序：
+SIGINT  --> commit
+SIGUSR1 --> roll back
+SIGUSR2 --> step forward
+
+修复inode_manger.cc中的一个bug：
+第433行：new_block_count为0时node->blocks[i]的值无意义，不应write_block
+
+lock_server.cc中的一个调整：
+第289、291行：在create中加锁，避免并发创建文件
+
+(lab5的测试程序并没有并发，yfs_client其实可以去掉lock相关的代码……)
+

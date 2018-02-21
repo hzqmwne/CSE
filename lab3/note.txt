@@ -1,0 +1,26 @@
+https://ipads.se.sjtu.edu.cn/courses/cse/2017/labs/lab3.html
+
+先合并lab2的修改（参见lab说明的Getting started）。
+RPC模块由lab提供。服务端持有rpcs类的实例，注册相应的函数；客户端持有rpcc类的实例，可以调用这些函数。（demo_protocol.h、demo_server.cc、demo_client.cc是一个简单但完整的例子）
+
+extent_server.cc：实例化inode_manager类
+extent_smain.cc：实例化rpcs类，注册extent_server类的成员函数
+extent_client.cc：实例化rpcc类，通过RPC调用extent_server中的函数（lab3需要完成此文件）
+yfs_client.cc：实例化extent_client类
+
+RPC模块没有源代码，只有编译好的.a文件。5.x版本的g++在链接时可能会产生以下错误：
+g++ -L. -L/usr/local/lib  yfs_client.o extent_client.o fuse.o extent_server.o inode_manager.o rpc/librpc64.a  -lpthread  -lfuse -lrt -ldl -o yfs_client
+extent_client.o: In function 'int rpcc::call<int, unsigned long long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >(unsigned int, unsigned long long const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int&, rpcc::TO)':
+/home/xx/lab-cse/lab3/./rpc/rpc.h:181：undefined reference to 'operator<<(marshall&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)'
+extent_client.o:In function ‘int rpcc::call_m<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >(unsigned int, marshall&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&, rpcc::TO)’:
+/home/xx/lab-cse/lab3/./rpc/rpc.h:149: undefined reference to 'operator>>(unmarshall&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&)'
+collect2: error: ld returned 1 exit status
+<builtin>: recipe for target 'yfs_client' failed
+make: *** [yfs_client] Error 1
+g++的4.x版本和5.x版本并不能完全ABI兼容（例如，涉及到std::string的地方name-mangling不同）。5.x版本可以添加 -D_GLIBCXX_USE_CXX11_ABI=0 编译选项避免此问题（GNUmakefile第11行，CXXFLAGS）。
+
+
+测试中程序卡住，无法用ctrl+c退出，可能是由于extent_server异常退出但yfs_client仍在运行。检查extent_server（特别是inode_manager.cc）中的bug
+
+如果测试后yfs1和yfs2文件夹无法删除，尝试多次执行./stop.sh
+

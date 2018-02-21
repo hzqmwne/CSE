@@ -1,0 +1,90 @@
+https://ipads.se.sjtu.edu.cn/courses/cse/2017/labs/lab7.html
+
+lab7基于lab5（事实上基于lab4即可），需要使yfs文件系统具有一定的容错能力，在部分bit出错的情况下仍能返回正确的数据。
+
+|super block|-----bitmap----|-----inode table-----|---------------data blocks--------------|
+
+测试程序分为五轮：（test_lab_7.c 和 disk.cc）
+第一轮：每个存放文件内容（data）的block会产生一个bit的错误，位置相同（文件元数据不会改变）
+第二轮：每个存放文件内容（data）的block会产生一个bit的错误，位置随机（文件元数据不会改变）
+第三轮：每个存放文件内容（data）的block会产生两个bit的错误，位置随机（文件元数据不会改变）
+第四轮：每个super block以外的block会产生一个bit的错误，位置随机（文件元数据会改变）
+第五轮：每个存放文件内容（data）的block的每个byte会产生一个bit的错误，位置随机（文件元数据不会改变）
+
+要同时满足五轮测试的要求，最复杂的情况是一个byte（8 bits）可能出现2个错误（第三轮的两个错误bit出现在同一个byte中）。由于第五轮测试的存在，编码后的单位数据长度最好是8bit的整数倍。注意到同一个block内两个相邻byte的16个bit不会超过2个错误，原想找到一种8个数据位+8个校验位，能纠正两个错误的编码，但是没有找到……
+
+===========================================================
+
+这里在disk层（inode_manager.cc）实现，确保disk::read_block返回的数据总是正确的。
+
+编码：
+
+每4个数据位附加4个校验位，相关关系如下：
+      校验位  ecc[3] ecc[2] ecc[1] ecc[0]
+数据位
+data[0]        1       1      1      1       ----->  ecc=1111, ~ecc=0000=0x0
+data[1]        1       1      1      0       ----->  ecc=1110, ~ecc=0001=0x1
+data[2]        1       1      0      1       ----->  ecc=1101, ~ecc=0010=0x2
+data[3]        1       1      0      0       ----->  ecc=1100, ~ecc=0011=0x3
+
+这样ecc的计算方式如下：（encodeData，inode_manager.cc第20行）
+ecc[3]=data[0]^data[1]^data[2]^data[3]
+ecc[2]=data[0]^data[1]^data[2]^data[3]
+ecc[1]=data[0]^data[1]
+ecc[0]=data[0]^data[2]
+（每个 数据位 参与至少两个 校验位 的计算）
+
+若原始数据是data[7..0]，将其拆分为两半，分别计算校验位，然后拼接在一起：
+encode1[7..0]={data[7..4],ecc1[3..0]}
+encode2[7..0]={data[3..0],ecc2[3..0]}
+最后，把编码后的每个byte连续存储两份。
+即：一个byte的原始数据data，最终会转换为 encode1 encode1 encode2 encode2 四个byte存入disk::blocks数组
+
+-------------------
+
+解码：（decodeData，inode_manager.cc第39行）
+
+对于每个byte，编码方案能够检出两位错误。如果确定错误只有一位，可以纠正。
+读出连续的两个字节，它们是相同的原始数据编码后的结果，应该也是相同的。
+如果这两个字节都校验通过，则没有错误；
+如果一个校验通过另一个没有校验通过，则未通过校验的字节发生了一位或两位错误，另一个字节没有错误；（第一、二、三、四轮测试可能发生的情况）
+如果两个字节都没有校验通过，则两个字节各发生了一位错误（因为同一block中相邻两个个字节最多出现两位错误），可以重新计算校验位ecc2，与读出的校验位ecc异或再取反，得到错误位在4个数据位中的索引。
+
+-------------------
+
+（后来发现可以直接使用(8,4)扩展汉明码进行编码……）
+
+===========================================================
+
+lock_server.cc中的一个调整：
+第129、135行：在getfile中加锁
+
+inode_manager.cc中的一个调整：
+第260行：关闭lab5中实现的日志系统，减小复杂度，加快速度
+
+===========================================================
+
+测试程序test-lab-7通过共享内存的方式与extent_server通信，调用disk.cc的相关函数修改disk::blocks数组制造错误。如果只为通过测试，可以简单地避开disk::blocks数组，只需要在lab5的基础上添加三行代码：（inode_manager.cc）
+
+unsigned char anotherblocks[BLOCK_NUM][BLOCK_SIZE];    // 另建立一个与disk::blocks相同的数组
+
+void
+disk::read_block(blockid_t id, char *buf)
+{
+  if(id < 0 || id >= BLOCK_NUM || buf == NULL) {
+  	return;
+  }
+  //memcpy(buf, this->blocks[id], BLOCK_SIZE);
+  memcpy(buf, anotherblocks[id], BLOCK_SIZE);    // 从另建立的数组读，而不是disk::blocks
+}
+
+void
+disk::write_block(blockid_t id, const char *buf)
+{
+  if(id < 0 || id >= BLOCK_NUM || buf == NULL) {
+  	return;
+  }
+  //memcpy(this->blocks[id], buf, BLOCK_SIZE);
+  memcpy(anotherblocks[id], buf, BLOCK_SIZE);    // 写入另建立的数组，而不是disk::blocks
+}
+

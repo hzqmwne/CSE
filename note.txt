@@ -1,0 +1,16 @@
+这是2017年秋季学期计算机系统工程课程的实践项目，通过几次lab的迭代，完成一个简易的文件系统。
+课程网站：https://ipads.se.sjtu.edu.cn/courses/cse/2017/
+
+需要linux系统。lab1的Get Ready部分提供了一个docker镜像（root密码是000），已经配置好了所有的环境。
+
+如果不使用提供的docker镜像，则需要安装有g++、make、FUSE
+g++最好使用4.x版本（lab3及以后需要与提供的rpc模块的.a文件链接，5.x版本存在ABI不兼容的问题，但可以解决，参见lab3/note.txt）
+对于debian系的linux，可以通过 apt-get install libfuse-dev 来安装FUSE
+
+
+
+所有的lab文件夹彼此独立，并且都有初始环境（labX start）和完成实现（labX finish）的提交，可以回滚到相应的版本查看
+
+
+
+每个lab文件夹下同样都有note.txt文件，包含了更详细的说明
